@@ -236,6 +236,18 @@ function IMUVisualizerCanvas({
   );
 }
 
+var formatSeconds = (secs: number) => {
+  var hours   = Math.floor(secs / 3600);
+  var minutes = Math.floor((secs - (hours * 3600)) / 60);
+  var seconds = secs - (hours * 3600) - (minutes * 60);
+
+  var time = "";
+  if (hours > 0) time += `${hours}h `
+  if (minutes > 0) time += `${minutes}m `
+  time += `${seconds.toFixed(1)}s`
+  return time;
+}
+
 export function IMUVisualizerWidget({ td }: { td: FlatDeviceTracker }) {
   if (!td.tracker) return <></>;
   const tracker = td.tracker;
@@ -255,6 +267,8 @@ export function IMUVisualizerWidget({ td }: { td: FlatDeviceTracker }) {
 
   const { useRawRotationEulerDegrees, useIdentAdjRotationEulerDegrees } =
     useTracker(tracker);
+
+  console.log(tracker);
 
   const rotationRaw = useRawRotationEulerDegrees();
   const rotationIdent = useIdentAdjRotationEulerDegrees() || rotationRaw;
@@ -338,6 +352,15 @@ export function IMUVisualizerWidget({ td }: { td: FlatDeviceTracker }) {
             {l10n.getString('widget-imu_visualizer-stay_aligned')}
           </Typography>
           <StayAlignedInfo color="primary" tracker={tracker} />
+        </div>
+      )}
+
+      {tracker.rawMagneticVector && tracker.magStatusInfo && (
+        <div className="flex justify-between">
+          <Typography>
+            Mag Status
+          </Typography>
+          <Typography>{tracker.magStatusInfo.active ? `🧲 ${tracker.magStatusInfo.correctionInDeg.toFixed(1)} deg` : '🔍'} ({formatSeconds(tracker.magStatusInfo.duration)})</Typography>
         </div>
       )}
 

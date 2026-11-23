@@ -1,5 +1,13 @@
 package dev.slimevr.udp
 
+import java.io.BufferedOutputStream
+import java.io.Closeable
+import java.io.DataOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 import com.jme3.math.FastMath
 import dev.slimevr.VRServerActions
 import dev.slimevr.device.Device
@@ -16,10 +24,14 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import solarxr_protocol.datatypes.BodyPart
 import solarxr_protocol.datatypes.DeviceOrigin
 import solarxr_protocol.datatypes.MagnetometerStatus
 import solarxr_protocol.datatypes.TrackerStatus
 import solarxr_protocol.datatypes.hardware_info.ImuType
+import solarxr_protocol.data_feed.tracker_data.MagStatusTracker
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -490,6 +502,91 @@ class AckConfigBehaviour : UDPConnectionBehaviour {
 			if (configType == SensorConfigType.MAGNETOMETER) {
 				tracker.context.dispatch(TrackerActions.SetMagStatus(flags.magStatus))
 			}
+		}.launchIn(receiver.context.scope)
+	}
+}
+
+fun ftr(input: Float) : String {
+	return "%f".format(input)
+}
+
+val FILE_PREFIX = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+internal val InspectionDebugFiles = HashMap<String, DataOutputStream>()
+fun getInspectionLogFile(hardwareId: String, bodyPart: BodyPart?) : DataOutputStream? {
+	if (InspectionDebugFiles[hardwareId] == null) {
+		val logDirectory = File("logs").apply { mkdirs() }
+		val logFile = logDirectory.resolve("${FILE_PREFIX}_${bodyPart}_${hardwareId.replace(":", "")}.log")
+		InspectionDebugFiles[hardwareId] = DataOutputStream(BufferedOutputStream(FileOutputStream(logFile)))
+	}
+	return InspectionDebugFiles[hardwareId];
+}
+fun writeInspectionLog(hardwareId: String, bodyPart: BodyPart?, eventString: String) {
+	val stream = getInspectionLogFile(hardwareId, bodyPart)
+	if (stream == null) { return }
+	stream.write("$eventString\n".toByteArray())
+	stream.flush()
+}
+
+class MagStatusInfoBehaviour : UDPConnectionBehaviour {
+	override fun observe(receiver: UDPConnection) {
+		receiver.packetEvents.onPacket<MagStatusInfoPacket> { event ->
+			val tracker = receiver.getTracker(event.data.sensorId) ?: return@onPacket
+			val state = tracker.context.state.value
+			val duration = if (event.data.duration >= 0) event.data.duration else -event.data.duration
+			tracker.context.dispatch(
+				TrackerActions.SetMagStatusInfo(
+					MagStatusTracker(
+						event.data.duration >= 0, 
+						duration,
+						event.data.recentCorrection
+					)
+				)
+			)
+		}.launchIn(receiver.context.scope)
+	}
+}
+
+
+class InspectionBehaviour : UDPConnectionBehaviour {
+	override fun observe(receiver: UDPConnection) {
+		receiver.packetEvents.onPacket<InspectionPacket> { event ->
+			val tracker = receiver.getTracker(event.data.sensorId) ?: return@onPacket
+			val state = tracker.context.state.value
+
+			val rot = event.data.rotation
+			val acc = event.data.acceleration
+			val mag = event.data.magnetometer
+
+			writeInspectionLog(
+				state.hardwareId, 
+				state.bodyPart,
+				"${System.currentTimeMillis()},${ftr(rot.x)},${ftr(rot.y)},${ftr(rot.z)},${ftr(acc.x)},${ftr(acc.y)},${ftr(acc.z)},${ftr(mag.x)},${ftr(mag.y)},${ftr(mag.z)}"
+			)
+		}.launchIn(receiver.context.scope)
+
+		receiver.packetEvents.onPacket<Gyro> { event ->
+			val tracker = receiver.getTracker(event.data.sensorId) ?: return@onPacket
+			val state = tracker.context.state.value
+			val gyro = event.data.gyroscope
+
+			writeInspectionLog(state.hardwareId, state.bodyPart, "${System.currentTimeMillis()},0,${ftr(gyro.x)},${ftr(gyro.y)},${ftr(gyro.z)}")
+		}.launchIn(receiver.context.scope)
+
+		receiver.packetEvents.onPacket<Accel> { event ->
+			val tracker = receiver.getTracker(event.data.sensorId) ?: return@onPacket
+			val state = tracker.context.state.value
+			val acc = event.data.acceleration
+
+			writeInspectionLog(state.hardwareId, state.bodyPart, "${System.currentTimeMillis()},1,${ftr(acc.x)},${ftr(acc.y)},${ftr(acc.z)}")
+		}.launchIn(receiver.context.scope)
+
+		receiver.packetEvents.onPacket<Mag> { event ->
+			val tracker = receiver.getTracker(event.data.sensorId) ?: return@onPacket
+			val state = tracker.context.state.value
+			val mag = event.data.magnetometer
+
+			writeInspectionLog(state.hardwareId, state.bodyPart, "${System.currentTimeMillis()},2,${ftr(mag.x)},${ftr(mag.y)},${ftr(mag.z)}")
+			tracker.context.dispatch(TrackerActions.SetRotation(magnetometer = mag))
 		}.launchIn(receiver.context.scope)
 	}
 }

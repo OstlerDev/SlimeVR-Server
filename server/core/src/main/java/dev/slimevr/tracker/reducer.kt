@@ -1,9 +1,40 @@
 package dev.slimevr.tracker
 
+import java.io.BufferedOutputStream
+import java.io.Closeable
+import java.io.DataOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import io.github.axisangles.ktmath.Quaternion
+import solarxr_protocol.datatypes.BodyPart
 import solarxr_protocol.datatypes.MountingMethod
+import solarxr_protocol.data_feed.tracker_data.MagStatusTracker
 import solarxr_protocol.rpc.ResetType
 import kotlin.time.Duration
+
+val QUAT_FILE_PREFIX = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+internal val QuatInspectionDebugFiles = HashMap<String, DataOutputStream>()
+fun getQuatInspectionLogFile(hardwareId: String, bodyPart: BodyPart?) : DataOutputStream? {
+	if (QuatInspectionDebugFiles[hardwareId] == null) {
+		val logDirectory = File("logs").apply { mkdirs() }
+		val logFile = logDirectory.resolve("${QUAT_FILE_PREFIX}_${bodyPart}_${hardwareId.replace(":", "")}_QUAT.log")
+		QuatInspectionDebugFiles[hardwareId] = DataOutputStream(BufferedOutputStream(FileOutputStream(logFile)))
+	}
+	return QuatInspectionDebugFiles[hardwareId];
+}
+fun writeQuatInspectionLog(hardwareId: String, bodyPart: BodyPart?, eventString: String) {
+	val stream = getQuatInspectionLogFile(hardwareId, bodyPart)
+	if (stream == null) { return }
+	stream.write("$eventString\n".toByteArray())
+	stream.flush()
+}
+
+
+fun ftrq(input: Float) : String {
+	return "%.3f".format(input)
+}
 
 fun reduce(
 	state: TrackerState,
@@ -22,6 +53,15 @@ fun reduce(
 
 		// Rotation
 		val rawRotation: RawRotation = action.rotation ?: state.rawRotation
+
+		if (action.rotation != null) {
+			writeQuatInspectionLog(
+				state.hardwareId, 
+				state.bodyPart,
+				"${System.currentTimeMillis()},${ftrq(rawRotation.w)},${ftrq(rawRotation.x)},${ftrq(rawRotation.y)},${ftrq(rawRotation.z)}"
+			)
+		}
+
 		val correctedRawRotation = if (state.stayAlignedData.enabled) {
 			// Apply stay aligned yaw correction
 			Quaternion.rotationAroundYAxis(state.stayAlignedData.yawCorrection.toRad()) * rawRotation
@@ -266,5 +306,9 @@ fun reduce(
 			rotationDirty = true,
 			pendingSkeletonResets = state.pendingSkeletonResets + ResetType.MOUNTING,
 		)
+	}
+
+	is TrackerActions.SetMagStatusInfo -> {
+		state.copy(magStatusInfo = action.status)
 	}
 }

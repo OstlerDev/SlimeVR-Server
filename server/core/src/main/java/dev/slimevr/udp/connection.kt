@@ -112,6 +112,8 @@ class UDPConnection(
 				TemperatureBehaviour(),
 				SensorConfigBehaviour(),
 				AckConfigBehaviour(),
+				MagStatusInfoBehaviour(),
+				InspectionBehaviour()
 			)
 
 			val connJob = kotlinx.coroutines.SupervisorJob(scope.coroutineContext[kotlinx.coroutines.Job])

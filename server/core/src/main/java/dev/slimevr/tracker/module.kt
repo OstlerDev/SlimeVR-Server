@@ -28,6 +28,7 @@ import solarxr_protocol.datatypes.MountingMethod
 import solarxr_protocol.datatypes.TrackerStatus
 import solarxr_protocol.datatypes.hardware_info.ImuType
 import solarxr_protocol.datatypes.hardware_info.TrackerDataType
+import solarxr_protocol.data_feed.tracker_data.MagStatusTracker
 import solarxr_protocol.rpc.ResetType
 import kotlin.time.Duration
 
@@ -87,6 +88,7 @@ data class TrackerState(
 	val motion: Motion,
 	val yawResetSmoothing: YawResetSmoothing?,
 	val stayAlignedData: StayAlignedData,
+	val magStatusInfo: MagStatusTracker,
 	val pendingSkeletonResets: List<ResetType> = emptyList(),
 	val needsFullReset: Boolean = false,
 	val needsMountingReset: Boolean = false,
@@ -122,6 +124,7 @@ sealed interface TrackerActions {
 	data class SetYawCorrection(val yawCorrection: Angle) : TrackerActions
 	data class SetStayAlignedEnabled(val enabled: Boolean) : TrackerActions
 	data class SetStepMounting(val headingAlignment: HeadingAlignment) : TrackerActions
+	data class SetMagStatusInfo(val status: MagStatusTracker) : TrackerActions
 }
 
 typealias TrackerContext = Context<TrackerState, TrackerActions>
@@ -230,6 +233,7 @@ class Tracker(
 			motion = Motion.ROTATING,
 			yawResetSmoothing = null,
 			stayAlignedData = StayAlignedData(),
+			magStatusInfo = MagStatusTracker(),
 		)
 	}
 }

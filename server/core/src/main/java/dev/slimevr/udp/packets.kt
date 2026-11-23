@@ -104,8 +104,10 @@ private fun Source.readSafeQuat(): Quaternion {
 enum class PacketType(val id: Int) {
 	HEARTBEAT(0),
 	ROTATION(1),
+	GYRO(2),
 	HANDSHAKE(3),
 	ACCEL(4),
+	MAG(5),
 	PING_PONG(10),
 	SERIAL(11),
 	BATTERY_LEVEL(12),
@@ -124,8 +126,11 @@ enum class PacketType(val id: Int) {
 	SET_CONFIG_FLAG(25),
 	FLEX_DATA(26),
 	POSITION(27),
+	MAG_CALIBRATION(30),
+	MAG_STATUS_INFO(32),
 	PACKET_BUNDLE(100),
 	PACKET_BUNDLE_COMPACT(101),
+	INSPECTION(105),
 	PROTOCOL_CHANGE(200),
 	;
 
@@ -250,9 +255,27 @@ data class Rotation(override val sensorId: Int = 0, val rotation: Quaternion = Q
 	}
 }
 
+data class Gyro(val gyroscope: Vector3 = Vector3.ZERO, override val sensorId: Int = 0) : SensorSpecificPacket {
+	companion object {
+		fun read(src: Source) = Gyro(
+			Vector3(src.readSafeFloat(), src.readSafeFloat(), src.readSafeFloat()),
+			if (src.remaining > 0) src.readU8() else 0,
+		)
+	}
+}
+
 data class Accel(val acceleration: Vector3 = Vector3.ZERO, override val sensorId: Int = 0) : SensorSpecificPacket {
 	companion object {
 		fun read(src: Source) = Accel(
+			Vector3(src.readSafeFloat(), src.readSafeFloat(), src.readSafeFloat()),
+			if (src.remaining > 0) src.readU8() else 0,
+		)
+	}
+}
+
+data class Mag(val magnetometer: Vector3 = Vector3.ZERO, override val sensorId: Int = 0) : SensorSpecificPacket {
+	companion object {
+		fun read(src: Source) = Mag(
 			Vector3(src.readSafeFloat(), src.readSafeFloat(), src.readSafeFloat()),
 			if (src.remaining > 0) src.readU8() else 0,
 		)
@@ -489,6 +512,45 @@ data class PositionPacket(override val sensorId: Int = 0, val position: Vector3 
 	}
 }
 
+data class MagStatusInfoPacket(
+	override val sensorId: Int = 0, 
+	val duration: Float = 0f, 
+	val recentCorrection: Float = 0f,
+) : SensorSpecificPacket {
+	companion object {
+		fun read(src: Source) = MagStatusInfoPacket(
+			src.readU8(), 
+			src.readSafeFloat(), 
+			src.readSafeFloat(),
+		)
+	}
+}
+
+data class InspectionPacket(
+	val inspectionType: Int = 0, 
+	override val sensorId: Int = 0, 
+	val inspectionDataType: Int = 0, 
+	val rotation: Vector3 = Vector3.ZERO, 
+	val ra: Int = 0, 
+	val acceleration: Vector3 = Vector3.ZERO,
+	val aa: Int = 0, 
+	val magnetometer: Vector3 = Vector3.ZERO,
+	val ma: Int = 0
+) : SensorSpecificPacket {
+	companion object {
+		fun read(src: Source) = InspectionPacket(
+			src.readU8(), 
+			src.readU8(), 
+			src.readU8(), 
+			Vector3(src.readSafeFloat(), src.readSafeFloat(), src.readSafeFloat()), 
+			src.readU8(), 
+			Vector3(src.readSafeFloat(), src.readSafeFloat(), src.readSafeFloat()), 
+			src.readU8(), 
+			Vector3(src.readSafeFloat(), src.readSafeFloat(), src.readSafeFloat()), 
+			src.readU8())
+	}
+}
+
 data class ProtocolChange(val targetProtocol: Int = 0, val targetVersion: Int = 0) : UDPPacket {
 	override fun write(dst: Sink) {
 		dst.writeUByte(targetProtocol.toUByte())
@@ -503,7 +565,9 @@ fun readPacket(type: PacketType, src: Source): UDPPacket = when (type) {
 	PacketType.HEARTBEAT -> Heartbeat
 	PacketType.HANDSHAKE -> Handshake.read(src)
 	PacketType.ROTATION -> Rotation.read(src)
+	PacketType.GYRO -> Gyro.read(src)
 	PacketType.ACCEL -> Accel.read(src)
+	PacketType.MAG -> Mag.read(src)
 	PacketType.PING_PONG -> PingPong.read(src)
 	PacketType.SERIAL -> Serial.read(src)
 	PacketType.BATTERY_LEVEL -> BatteryLevel.read(src)
@@ -521,8 +585,10 @@ fun readPacket(type: PacketType, src: Source): UDPPacket = when (type) {
 	PacketType.ACK_CONFIG_CHANGE -> AckConfigChange.read(src)
 	PacketType.FLEX_DATA -> FlexData.read(src)
 	PacketType.POSITION -> PositionPacket.read(src)
+	PacketType.MAG_STATUS_INFO -> MagStatusInfoPacket.read(src)
 	PacketType.PACKET_BUNDLE -> PacketBundle.read(src)
 	PacketType.PACKET_BUNDLE_COMPACT -> PacketBundleCompact.read(src)
+	PacketType.INSPECTION -> InspectionPacket.read(src)
 	PacketType.PROTOCOL_CHANGE -> ProtocolChange.read(src)
 	else -> throw UnsupportedOperationException("Inbound support not implemented for ${type::class.simpleName}")
 }
