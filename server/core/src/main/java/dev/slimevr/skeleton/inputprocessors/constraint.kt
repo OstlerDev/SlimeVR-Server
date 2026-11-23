@@ -16,6 +16,6 @@ class ConstraintInputProcessor(
 		val skeletonConfig = settings.context.state.value.data.skeletonConfig
 		if (!skeletonConfig.toggles.enforceConstraints) return
 
-		constrainSkeleton(mutableInputSkeleton, constraints)
+		constrainSkeleton(mutableInputSkeleton, constraints, true)
 	}
 }

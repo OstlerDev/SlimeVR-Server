@@ -3,10 +3,12 @@ import { ReactNode, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   BodyPart,
-  ChangeTapDetectionSettingsRequestT,
+  ChangeTrackerActionSettingsRequestT,
   RpcMessage,
-  TapDetectionSettingsRequestT,
-  TapDetectionSettingsResponseT,
+  TrackerActionMethod,
+  TrackerActionSettingsRequestT,
+  TrackerActionSettingsResponseT,
+  TrackerActionSettingsT,
 } from 'solarxr-protocol';
 import { useWebsocketAPI } from '@/hooks/websocket-api';
 import { useSettingsDefaults } from '@/hooks/settings-defaults';
@@ -40,48 +42,64 @@ import {
   SettingsGroupDef,
 } from '@/components/settings/settings-definitions';
 
-type TapDetectionForm = {
+type TrackerActionForm = {
   yawResetEnabled: boolean;
-  fullResetEnabled: boolean;
-  mountingResetEnabled: boolean;
-  yawResetDelay: number;
-  fullResetDelay: number;
-  mountingResetDelay: number;
+  yawResetBodyPart: string;
+  yawResetMethod: string;
   yawResetTaps: number;
+  yawResetDelay: number;
+  fullResetEnabled: boolean;
+  fullResetBodyPart: string;
+  fullResetMethod: string;
   fullResetTaps: number;
+  fullResetDelay: number;
+  mountingResetEnabled: boolean;
+  mountingResetBodyPart: string;
+  mountingResetMethod: string;
   mountingResetTaps: number;
-  yawResetTracker: string;
-  fullResetTracker: string;
-  mountingResetTracker: string;
-  numberTrackersOverThreshold: number;
+  mountingResetDelay: number;
+  tapsTrackersOverThreshold: number;
 };
 
 // The server always sends every field, the fallbacks only satisfy the optional types
-function toForm(settings: TapDetectionSettingsResponseT): TapDetectionForm {
+function toForm(settings: TrackerActionSettingsResponseT): TrackerActionForm {
   return {
-    yawResetEnabled: settings.yawResetEnabled ?? false,
-    fullResetEnabled: settings.fullResetEnabled ?? false,
-    mountingResetEnabled: settings.mountingResetEnabled ?? false,
-    yawResetDelay: settings.yawResetDelay ?? 0,
-    fullResetDelay: settings.fullResetDelay ?? 0,
-    mountingResetDelay: settings.mountingResetDelay ?? 0,
-    yawResetTaps: settings.yawResetTaps ?? 0,
-    fullResetTaps: settings.fullResetTaps ?? 0,
-    mountingResetTaps: settings.mountingResetTaps ?? 0,
-    yawResetTracker: String(settings.yawResetTracker ?? BodyPart.NONE),
-    fullResetTracker: String(settings.fullResetTracker ?? BodyPart.NONE),
-    mountingResetTracker: String(
-      settings.mountingResetTracker ?? BodyPart.NONE
+    yawResetEnabled: settings.yawResetAction?.enabled ?? false,
+    yawResetBodyPart: String(
+      settings.yawResetAction?.bodyPart ?? BodyPart.NONE
     ),
-    numberTrackersOverThreshold: settings.numberTrackersOverThreshold ?? 0,
+    yawResetMethod: String(
+      settings.yawResetAction?.method ?? TrackerActionMethod.TAP
+    ),
+    yawResetTaps: settings.yawResetAction?.taps ?? 2,
+    yawResetDelay: settings.yawResetAction?.delay ?? 0,
+    fullResetEnabled: settings.fullResetAction?.enabled ?? false,
+    fullResetBodyPart: String(
+      settings.fullResetAction?.bodyPart ?? BodyPart.NONE
+    ),
+    fullResetMethod: String(
+      settings.fullResetAction?.method ?? TrackerActionMethod.TAP
+    ),
+    fullResetTaps: settings.fullResetAction?.taps ?? 2,
+    fullResetDelay: settings.fullResetAction?.delay ?? 0,
+    mountingResetEnabled: settings.mountingResetAction?.enabled ?? false,
+    mountingResetBodyPart: String(
+      settings.mountingResetAction?.bodyPart ?? BodyPart.NONE
+    ),
+    mountingResetMethod: String(
+      settings.mountingResetAction?.method ?? TrackerActionMethod.TAP
+    ),
+    mountingResetTaps: settings.mountingResetAction?.taps ?? 2,
+    mountingResetDelay: settings.mountingResetAction?.delay ?? 0,
+    tapsTrackersOverThreshold: settings.tapsTrackersOverThreshold ?? 0,
   };
 }
 
-const tapDetectionSettingsAtom = atom<TapDetectionSettingsResponseT | null>(
+const trackerActionSettingsAtom = atom<TrackerActionSettingsResponseT | null>(
   null
 );
-const tapDetectionSettingsValueAtom = selectAtom(
-  tapDetectionSettingsAtom,
+const trackerActionSettingsValueAtom = selectAtom(
+  trackerActionSettingsAtom,
   (settings) => settings,
   isEqual
 );
@@ -111,19 +129,19 @@ function FocusableRow({
   );
 }
 
-export function TapDetectionSettings({
+export function TrackerActionSettings({
   resets,
   threshold,
 }: {
   resets: SettingsGroupDef<'yawReset' | 'fullReset' | 'mountingReset'>;
-  threshold: SettingsGroupDef<'numberTrackersOverThreshold'>;
+  threshold: SettingsGroupDef<'tapsTrackersOverThreshold'>;
 }) {
-  const setSettings = useSetAtom(tapDetectionSettingsAtom);
-  const settings = useAtomValue(tapDetectionSettingsValueAtom);
+  const setSettings = useSetAtom(trackerActionSettingsAtom);
+  const settings = useAtomValue(trackerActionSettingsValueAtom);
   const { l10n } = useLocalization();
   const { currentLocales } = useLocaleConfig();
   const { sendRPCPacket, useRPCPacket, useConnectedEffect } = useWebsocketAPI();
-  const defaults = useSettingsDefaults().tapDetection;
+  const defaults = useSettingsDefaults().trackerAction;
 
   const secondsFormat = new Intl.NumberFormat(currentLocales, {
     style: 'unit',
@@ -140,31 +158,49 @@ export function TapDetectionSettings({
       label: l10n.getString(`body_part-${BodyPart[value]}`),
     }));
 
+  const TrackerActionMethods: { value: string; label: string }[] =
+    Object.values(TrackerActionMethod)
+      .filter((v): v is TrackerActionMethod => typeof v === 'number')
+      .map((value) => ({
+        value: String(value),
+        label: l10n.getString(
+          `settings-general-gesture_control-${TrackerActionMethod[value]}`
+        ),
+      }));
+
   const { control, watch, handleSubmit, reset, setValue } =
-    useForm<TapDetectionForm>({
+    useForm<TrackerActionForm>({
       defaultValues: toForm(defaults),
       mode: 'onChange',
       reValidateMode: 'onChange',
     });
 
-  const onSubmit = (values: TapDetectionForm) => {
-    const settingsReq = new ChangeTapDetectionSettingsRequestT();
-    settingsReq.fullResetDelay = values.fullResetDelay;
-    settingsReq.fullResetEnabled = values.fullResetEnabled;
-    settingsReq.fullResetTaps = values.fullResetTaps;
-    settingsReq.yawResetDelay = values.yawResetDelay;
-    settingsReq.yawResetEnabled = values.yawResetEnabled;
-    settingsReq.yawResetTaps = values.yawResetTaps;
-    settingsReq.yawResetTracker = Number(values.yawResetTracker);
-    settingsReq.mountingResetTracker = Number(values.mountingResetTracker);
-    settingsReq.fullResetTracker = Number(values.fullResetTracker);
-    settingsReq.mountingResetEnabled = values.mountingResetEnabled;
-    settingsReq.mountingResetDelay = values.mountingResetDelay;
-    settingsReq.mountingResetTaps = values.mountingResetTaps;
-    settingsReq.numberTrackersOverThreshold =
-      values.numberTrackersOverThreshold;
+  const onSubmit = (values: TrackerActionForm) => {
+    const settingsReq = new ChangeTrackerActionSettingsRequestT();
+    settingsReq.yawResetAction = new TrackerActionSettingsT(
+      values.yawResetEnabled,
+      values.yawResetDelay,
+      Number(values.yawResetBodyPart),
+      Number(values.yawResetMethod),
+      values.yawResetTaps
+    );
+    settingsReq.fullResetAction = new TrackerActionSettingsT(
+      values.fullResetEnabled,
+      values.fullResetDelay,
+      Number(values.fullResetBodyPart),
+      Number(values.fullResetMethod),
+      values.fullResetTaps
+    );
+    settingsReq.mountingResetAction = new TrackerActionSettingsT(
+      values.mountingResetEnabled,
+      values.mountingResetDelay,
+      Number(values.mountingResetBodyPart),
+      Number(values.mountingResetMethod),
+      values.mountingResetTaps
+    );
+    settingsReq.tapsTrackersOverThreshold = values.tapsTrackersOverThreshold;
 
-    sendRPCPacket(RpcMessage.ChangeTapDetectionSettingsRequest, settingsReq);
+    sendRPCPacket(RpcMessage.ChangeTrackerActionSettingsRequest, settingsReq);
   };
 
   useEffect(() => {
@@ -176,8 +212,8 @@ export function TapDetectionSettings({
 
   useConnectedEffect(() => {
     sendRPCPacket(
-      RpcMessage.TapDetectionSettingsRequest,
-      new TapDetectionSettingsRequestT()
+      RpcMessage.TrackerActionSettingsRequest,
+      new TrackerActionSettingsRequestT()
     );
   }, []);
 
@@ -187,27 +223,33 @@ export function TapDetectionSettings({
   }, [settings]);
 
   useRPCPacket(
-    RpcMessage.TapDetectionSettingsResponse,
-    (settings: TapDetectionSettingsResponseT) => {
+    RpcMessage.TrackerActionSettingsResponse,
+    (settings: TrackerActionSettingsResponseT) => {
       setSettings(settings);
     }
   );
 
   const resetThreshold = settingReset<
-    TapDetectionForm,
-    'numberTrackersOverThreshold'
+    TrackerActionForm,
+    'tapsTrackersOverThreshold'
   >(
-    defaults.numberTrackersOverThreshold ?? undefined,
-    watch('numberTrackersOverThreshold'),
+    defaults.tapsTrackersOverThreshold ?? undefined,
+    watch('tapsTrackersOverThreshold'),
     (next) => {
-      setValue('numberTrackersOverThreshold', next);
+      setValue('tapsTrackersOverThreshold', next);
       handleSubmit(onSubmit)();
     }
   );
 
   const defaultForm = toForm(defaults);
   const resetKindFields = (id: (typeof resetKinds)[number]['id']) =>
-    [`${id}Enabled`, `${id}Tracker`, `${id}Taps`, `${id}Delay`] as const;
+    [
+      `${id}Enabled`,
+      `${id}BodyPart`,
+      `${id}Method`,
+      `${id}Taps`,
+      `${id}Delay`,
+    ] as const;
   const kindReset = (id: (typeof resetKinds)[number]['id']) => {
     const fields = resetKindFields(id);
     return {
@@ -224,16 +266,19 @@ export function TapDetectionSettings({
       id: 'yawReset',
       enabled: watch('yawResetEnabled'),
       icon: <YawResetIcon width={20} />,
+      method: watch('yawResetMethod'),
     },
     {
       id: 'fullReset',
       enabled: watch('fullResetEnabled'),
       icon: <FullResetIcon width={20} />,
+      method: watch('fullResetMethod'),
     },
     {
       id: 'mountingReset',
       enabled: watch('mountingResetEnabled'),
       icon: <MountingResetIcon width={20} />,
+      method: watch('mountingResetMethod'),
     },
   ] as const;
 
@@ -245,7 +290,7 @@ export function TapDetectionSettings({
   );
 
   const mobileCaption = (id: string) => (
-    <div className="md:hidden">
+    <div className="lg:hidden">
       <Typography bold id={`settings-general-gesture_control-column-${id}`} />
     </div>
   );
@@ -259,27 +304,28 @@ export function TapDetectionSettings({
         <Typography id="settings-general-gesture_control-description" />
       </div>
       <div className="rounded-2xl bg-background-80 overflow-hidden">
-        <table className="w-full text-left border-collapse block md:table">
-          <thead className="hidden md:table-header-group">
+        <table className="w-full text-left border-collapse block lg:table">
+          <thead className="hidden lg:table-header-group">
             <tr className="border-b border-background-60 uppercase">
               <th className="py-3 pl-4 pr-2 w-0" />
               <th className="py-3 pr-4 w-64 whitespace-nowrap">
-                {column('reset')}
+                {column('action')}
               </th>
               <th className="py-3 px-4">{column('tracker')}</th>
+              <th className="py-3 px-4">{column('method')}</th>
               <th className="py-3 px-4 w-56">{column('taps')}</th>
               <th className="py-3 pl-4 pr-4 w-56">{column('delay')}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-background-60 block md:table-row-group">
-            {resetKinds.map(({ id, enabled, icon }) => (
+          <tbody className="divide-y divide-background-60 block lg:table-row-group">
+            {resetKinds.map(({ id, enabled, icon, method }) => (
               <FocusableRow
                 key={id}
                 setting={resets.rows[id]}
-                className="grid grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)] md:table-row gap-x-2 gap-y-3 md:gap-0 items-center pl-1 pr-3 py-3 xs:pl-2 xs:pr-4 xs:py-4 md:p-0"
+                className="grid grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)] lg:table-row gap-x-2 gap-y-3 lg:gap-0 items-center pl-1 pr-3 py-3 xs:pl-2 xs:pr-4 xs:py-4 lg:p-0"
               >
-                <td className="contents md:table-cell md:py-3 md:pl-4 md:pr-2 align-middle">
-                  <div className="contents md:flex md:items-center md:gap-2">
+                <td className="contents lg:table-cell lg:py-3 lg:pl-4 lg:pr-2 align-middle">
+                  <div className="contents lg:flex lg:items-center lg:gap-2">
                     <div className="col-start-1 row-start-1 flex justify-center">
                       <SettingResetButton {...kindReset(id)} />
                     </div>
@@ -293,7 +339,7 @@ export function TapDetectionSettings({
                     </div>
                   </div>
                 </td>
-                <td className="col-start-2 col-span-2 row-start-1 min-w-0 pr-12 block md:table-cell md:py-3 md:pr-4 align-middle">
+                <td className="col-start-2 col-span-2 row-start-1 min-w-0 pr-12 block lg:table-cell lg:py-3 lg:pr-2 align-middle">
                   <label
                     htmlFor={`tap-${id}`}
                     className="flex items-center gap-2.5 cursor-pointer whitespace-nowrap"
@@ -308,7 +354,7 @@ export function TapDetectionSettings({
                     />
                   </label>
                 </td>
-                <td className="col-start-2 col-span-2 row-start-2 block md:table-cell md:py-3 md:px-4 align-middle">
+                <td className="col-start-2 col-span-2 row-start-2 smol:col-start-2 smol:col-span-1 min-w-0 block lg:table-cell lg:py-3 lg:px-2 align-middle">
                   <fieldset
                     disabled={!enabled}
                     className={classNames(
@@ -321,12 +367,12 @@ export function TapDetectionSettings({
                       display="block"
                       control={control}
                       placeholder={''}
-                      name={`${id}Tracker` as keyof TapDetectionForm}
+                      name={`${id}BodyPart` as keyof TrackerActionForm}
                       items={bodyParts}
                     />
                   </fieldset>
                 </td>
-                <td className="col-start-2 col-span-2 row-start-3 smol:col-start-2 smol:col-span-1 min-w-0 block md:table-cell md:py-3 md:px-4 align-middle">
+                <td className="col-start-2 col-span-2 row-start-2 smol:col-start-3 smol:col-span-1 smol:row-start-2 min-w-0 block lg:table-cell lg:py-3 lg:px-2 align-middle">
                   <fieldset
                     disabled={!enabled}
                     className={classNames(
@@ -334,10 +380,32 @@ export function TapDetectionSettings({
                       !enabled && 'opacity-50'
                     )}
                   >
+                    {mobileCaption('method')}
+                    <Dropdown
+                      display="block"
+                      control={control}
+                      placeholder={''}
+                      name={`${id}Method` as keyof TrackerActionForm}
+                      items={TrackerActionMethods}
+                    />
+                  </fieldset>
+                </td>
+                <td className="col-start-2 col-span-2 row-start-3 smol:col-start-2 smol:col-span-1 min-w-0 block lg:table-cell lg:py-3 lg:px-2 align-middle">
+                  <fieldset
+                    disabled={
+                      !enabled || Number(method) == TrackerActionMethod.BUTTON
+                    }
+                    className={classNames(
+                      'flex flex-col gap-1.5',
+                      (!enabled ||
+                        Number(method) == TrackerActionMethod.BUTTON) &&
+                        'opacity-50'
+                    )}
+                  >
                     {mobileCaption('taps')}
                     <NumberSelector
                       control={control}
-                      name={`${id}Taps` as keyof TapDetectionForm}
+                      name={`${id}Taps` as keyof TrackerActionForm}
                       valueLabelFormat={(value) =>
                         l10n.getString(
                           'settings-general-gesture_control-taps',
@@ -350,7 +418,7 @@ export function TapDetectionSettings({
                     />
                   </fieldset>
                 </td>
-                <td className="col-start-2 col-span-2 row-start-4 smol:col-start-3 smol:col-span-1 smol:row-start-3 min-w-0 block md:table-cell md:py-3 md:px-4 align-middle">
+                <td className="col-start-2 col-span-2 row-start-3 smol:col-start-3 smol:col-span-1 smol:row-start-3 min-w-0 block lg:table-cell lg:py-3 lg:px-2 align-middle">
                   <fieldset
                     disabled={!enabled}
                     className={classNames(
@@ -361,7 +429,7 @@ export function TapDetectionSettings({
                     {mobileCaption('delay')}
                     <NumberSelector
                       control={control}
-                      name={`${id}Delay` as keyof TapDetectionForm}
+                      name={`${id}Delay` as keyof TrackerActionForm}
                       valueLabelFormat={(value) => secondsFormat.format(value)}
                       min={0.2}
                       max={3.0}
@@ -377,13 +445,13 @@ export function TapDetectionSettings({
 
       <SettingsGroup group={threshold}>
         <SettingRow
-          setting={threshold.rows.numberTrackersOverThreshold}
+          setting={threshold.rows.tapsTrackersOverThreshold}
           controlWidth="wide"
           {...resetThreshold}
           control={
             <NumberSelector
               control={control}
-              name="numberTrackersOverThreshold"
+              name="tapsTrackersOverThreshold"
               valueLabelFormat={(value) =>
                 l10n.getString('settings-general-gesture_control-trackers', {
                   amount: Math.round(value),

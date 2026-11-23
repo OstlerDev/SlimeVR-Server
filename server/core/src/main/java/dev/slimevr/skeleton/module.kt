@@ -4,11 +4,12 @@ import dev.slimevr.Phase1ContextProvider
 import dev.slimevr.config.Settings
 import dev.slimevr.context.Behaviour
 import dev.slimevr.context.Context
+import dev.slimevr.skeleton.computedprocessors.UpperLegsTwistComputedProcessor
 import dev.slimevr.skeleton.computedprocessors.VelocityComputedProcessor
 import dev.slimevr.skeleton.fkprocessors.FootPlantFkProcessor
 import dev.slimevr.skeleton.fkprocessors.LocalizerFkProcessor
 import dev.slimevr.skeleton.fkprocessors.ToeSnapFkProcessor
-import dev.slimevr.skeleton.inputprocessors.BoneOffsetInputProcessor
+import dev.slimevr.skeleton.inputprocessors.ArmsInputProcessor
 import dev.slimevr.skeleton.inputprocessors.ConstraintInputProcessor
 import dev.slimevr.skeleton.inputprocessors.DirectLinkInputProcessor
 import dev.slimevr.skeleton.inputprocessors.FallbackInputProcessor
@@ -18,7 +19,6 @@ import dev.slimevr.skeleton.inputprocessors.HeadPositionFallbackInputProcessor
 import dev.slimevr.skeleton.inputprocessors.NeckInputProcessor
 import dev.slimevr.skeleton.inputprocessors.SpineInputProcessor
 import dev.slimevr.skeleton.inputprocessors.ToesInputProcessor
-import dev.slimevr.skeleton.inputprocessors.UpperLegsRollAlignInputProcessor
 import dev.slimevr.skeleton.targetprocessors.FloorClipTargetProcessor
 import dev.slimevr.skeleton.targetprocessors.PositionalTargetProcessor
 import dev.slimevr.skeleton.targetprocessors.SkatingCorrectionTargetProcessor
@@ -47,7 +47,6 @@ data class BoneInput(
 	val bodyPart: BodyPart,
 	val headOffset: Vector3,
 	val offset: Vector3,
-	val boneOffset: Vector3,
 	val poseTime: ComparableTimeMark?,
 	val rotation: Quaternion,
 	val acceleration: Vector3,
@@ -63,7 +62,6 @@ data class BoneState(
 	val bodyPart: BodyPart,
 	val headOffset: Vector3,
 	val offset: Vector3,
-	val boneOffset: Vector3,
 	val rotation: Quaternion,
 	val acceleration: Vector3,
 	val headPosition: Vector3,
@@ -113,7 +111,6 @@ val DEFAULT_BONE_INPUT = BoneInput(
 	bodyPart = BodyPart.NONE,
 	headOffset = Vector3.ZERO,
 	offset = Vector3.ZERO,
-	boneOffset = Vector3.ZERO,
 	poseTime = null,
 	rotation = Quaternion.IDENTITY,
 	acceleration = Vector3.ZERO,
@@ -154,7 +151,6 @@ fun buildBone(bone: BoneInput, parentBone: BoneState?, velocity: Velocity = ZERO
 		bodyPart = bone.bodyPart,
 		headOffset = bone.headOffset,
 		offset = bone.offset,
-		boneOffset = bone.boneOffset,
 		rotation = bone.rotation,
 		acceleration = bone.acceleration,
 		headPosition = headPosition,
@@ -167,7 +163,7 @@ fun buildBone(bone: BoneInput, parentBone: BoneState?, velocity: Velocity = ZERO
 /**
  * Runs FK from boneInputs, mutating the passed bones.
  */
-fun buildBones(mutableBones: BodyPartMap<BoneState>, boneInputs: InputSkeleton, changedParts: Set<BodyPart> = headPartSet) {
+fun buildBones(mutableBones: BodyPartMap<BoneState>, boneInputs: InputSkeleton, changedParts: Collection<BodyPart> = headPartSet) {
 	for (bodyPart in highestBodyParts(changedParts)) {
 		for ((parentPart, childPart) in iterateBodyPartHierarchy(bodyPart, false)) {
 			val rawBone = boneInputs[childPart] ?: continue
@@ -180,7 +176,6 @@ fun buildBones(mutableBones: BodyPartMap<BoneState>, boneInputs: InputSkeleton, 
 sealed interface SkeletonActions {
 	data class SetBonePose(
 		val bodyPart: BodyPart,
-		val boneOffset: Vector3?,
 		val rotation: Quaternion?,
 		val acceleration: Vector3?,
 		val position: Vector3?,
@@ -191,6 +186,7 @@ sealed interface SkeletonActions {
 	data class PauseTracking(val pause: Boolean) : SkeletonActions
 	data class SetPausedBoneInputs(val pausedBoneInputs: InputSkeleton) : SkeletonActions
 	data object ResetHeadPosition : SkeletonActions
+	data object RecenterHeadPosition : SkeletonActions
 	data object ResetFloorLevel : SkeletonActions
 	data class RequestProcessorReset(val resetType: ResetType) : SkeletonActions
 	data class ProcessorResetsApplied(val count: Int) : SkeletonActions
@@ -273,13 +269,12 @@ class Skeleton(
 					// Run before FK on the inputs
 					inputProcessors = listOf(
 						FilteringInputProcessor(settings),
-						BoneOffsetInputProcessor(),
 						HeadPositionFallbackInputProcessor(),
 						FallbackInputProcessor(),
 						SpineInputProcessor(settings),
 						NeckInputProcessor(),
-						UpperLegsRollAlignInputProcessor(settings),
 						DirectLinkInputProcessor(),
+						ArmsInputProcessor(),
 						FingersInputProcessor(),
 						ToesInputProcessor(),
 						ConstraintInputProcessor(settings),
@@ -302,6 +297,7 @@ class Skeleton(
 					),
 					// Run on the result of IK and persist.
 					ikComputedProcessors = listOf(
+						UpperLegsTwistComputedProcessor(settings),
 						VelocityComputedProcessor(),
 					),
 				),

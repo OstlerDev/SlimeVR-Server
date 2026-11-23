@@ -43,9 +43,9 @@ private val SPINE_SOURCE_RELIABILITY = arrayOf(
 		SpineSource.UPPER_CHEST to Reliability(-11.5f, -20f), // Itself
 		// To
 		SpineSource.LOWER_CHEST to Reliability(-6f, -15f, 0f),
-		SpineSource.UPPER_WAIST to Reliability(1.5f, 4f, 0.4f),
+		SpineSource.UPPER_WAIST to Reliability(1.5f, 4f, 0.44f),
 		SpineSource.LOWER_WAIST to Reliability(2f, 5f, 0.4f),
-		SpineSource.HIP to Reliability(4f, 6.25f, 0.35f),
+		SpineSource.HIP to Reliability(4f, 6.25f, 0.4f),
 		SpineSource.UPPER_LEGS to Reliability(4f, 5f),
 	),
 	SpineSource.LOWER_CHEST to arrayOf(
@@ -53,9 +53,9 @@ private val SPINE_SOURCE_RELIABILITY = arrayOf(
 		SpineSource.UPPER_CHEST to Reliability(-18f, 40f),
 		SpineSource.LOWER_CHEST to Reliability(30f), // Itself
 		// To
-		SpineSource.UPPER_WAIST to Reliability(1.5f, 10f, 0.4f),
+		SpineSource.UPPER_WAIST to Reliability(1.5f, 10f, 0.44f),
 		SpineSource.LOWER_WAIST to Reliability(2f, 8f, 0.4f),
-		SpineSource.HIP to Reliability(4f, 7.25f, 0.35f),
+		SpineSource.HIP to Reliability(4f, 7.25f, 0.4f),
 		SpineSource.UPPER_LEGS to Reliability(4f, 6f),
 	),
 	SpineSource.UPPER_WAIST to arrayOf(
@@ -65,7 +65,7 @@ private val SPINE_SOURCE_RELIABILITY = arrayOf(
 		SpineSource.UPPER_WAIST to Reliability(40f), // Itself
 		// To
 		SpineSource.LOWER_WAIST to Reliability(16f, 18f, 0.85f),
-		SpineSource.HIP to Reliability(4.5f, 13.5f, 0.87f),
+		SpineSource.HIP to Reliability(4.5f, 13.5f, 0.88f),
 		SpineSource.UPPER_LEGS to Reliability(0.25f, 12f),
 	),
 	SpineSource.LOWER_WAIST to arrayOf(
@@ -75,7 +75,7 @@ private val SPINE_SOURCE_RELIABILITY = arrayOf(
 		SpineSource.UPPER_WAIST to Reliability(25f),
 		SpineSource.LOWER_WAIST to Reliability(38f), // Itself
 		// To
-		SpineSource.HIP to Reliability(5.25f, 13f, 0.87f),
+		SpineSource.HIP to Reliability(5.25f, 13f, 0.88f),
 		SpineSource.UPPER_LEGS to Reliability(1.75f, 11f),
 	),
 	SpineSource.HIP to arrayOf(
@@ -84,7 +84,7 @@ private val SPINE_SOURCE_RELIABILITY = arrayOf(
 		SpineSource.LOWER_CHEST to Reliability(9.75f, 9.25f),
 		SpineSource.UPPER_WAIST to Reliability(13f, 20f),
 		SpineSource.LOWER_WAIST to Reliability(14f, 30f),
-		SpineSource.HIP to Reliability(38f, 60f, 0.92f), // Itself
+		SpineSource.HIP to Reliability(38f, 60f), // Itself
 		// To
 		SpineSource.UPPER_LEGS to Reliability(7f, 17f),
 	),
@@ -239,22 +239,22 @@ private fun interpolateRatio(fromUpperToLower: Float, curvature: Float, fromReli
 private fun interpolateForwardSide(fromRotation: Quaternion, toRotation: Quaternion, forwardRatio: Float, sideRatio: Float?): Quaternion {
 	if (sideRatio == null) return fromRotation.interpQ(toRotation, forwardRatio)
 
-	// Work with the rotation delta to avoid axes being ambiguous
-	val delta = fromRotation.inv() * toRotation
+	// Work with the local rotation to avoid axes being ambiguous
+	val local = toRotation.localAbout(fromRotation)
 
-	// Decompose the delta into its twist (forward) and swing (remaining/sides) along the x-axis
-	val forward = delta.project(Vector3.POS_X).unit()
-	val side = delta / forward
+	// Decompose the local rotation into its twist (forward) and swing (remaining/sides) along the x-axis
+	val forward = local.project(Vector3.POS_X).unit()
+	val side = local / forward
 
-	// Scale each axis of the delta with our ratios
+	// Scale each axis of the local rotation with our ratios
 	val scaledForward = forward.pow(forwardRatio)
 	val scaledSide = side.pow(sideRatio)
 
-	// Recompose the delta. We removed formward from delta to get side, so we must add forward to side back.
-	val scaledDelta = scaledSide * scaledForward
+	// Recompose the local rotation. We removed forward from local rotation to get side, so we must add forward to side back.
+	val scaledLocal = scaledSide * scaledForward
 
-	// Return scaled delta applied to From rotation
-	return fromRotation * scaledDelta
+	// Return scaled local rotation applied to From rotation
+	return scaledLocal.globalAbout(fromRotation)
 }
 
 /**

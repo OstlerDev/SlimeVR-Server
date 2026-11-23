@@ -32,7 +32,7 @@ import solarxr_protocol.data_feed.tracker_data.MagStatusTracker
 import solarxr_protocol.rpc.ResetType
 import kotlin.time.Duration
 
-// A tracker is initialized as ROTATING to prevent TapDetection and Stay Aligned from running immediately.
+// A tracker is initialized as ROTATING to prevent Stay Aligned from running immediately.
 enum class Motion {
 	ROTATING,
 	RESTING,
@@ -67,7 +67,6 @@ data class TrackerState(
 	val intendedBodyPart: BodyPart?,
 	val boneOffsets: Map<BodyPart, Vector3>,
 	val customName: String?,
-	val trackerDataType: TrackerDataType, // TODO flex sensors
 	val lastMountingMethod: MountingMethod,
 	val mountingOrientation: HeadingAlignment,
 	val lastReference: Quaternion?,
@@ -78,6 +77,7 @@ data class TrackerState(
 	val rawAcceleration: RawAcceleration?,
 	val acceleration: CalibratedAcceleration?,
 	val rawMagnetometer: Vector3,
+	val rawPosition: Vector3?,
 	val position: Vector3?,
 	val imuTemp: Float?,
 	val accumulatedTicks: UShort,
@@ -212,7 +212,6 @@ class Tracker(
 			intendedBodyPart = null,
 			boneOffsets = emptyMap(),
 			customName = null,
-			trackerDataType = TrackerDataType.ROTATION,
 			lastMountingMethod = MountingMethod.MANUAL,
 			mountingOrientation = Quaternion.IDENTITY,
 			lastReference = Quaternion.IDENTITY,
@@ -223,6 +222,7 @@ class Tracker(
 			rawAcceleration = null,
 			acceleration = null,
 			rawMagnetometer = Vector3.ZERO,
+			rawPosition = null,
 			position = null,
 			imuTemp = null,
 			accumulatedTicks = 0u,
